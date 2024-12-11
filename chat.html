@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yes/No/네고 채팅창</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #a8e063, #56ab2f); /* 부드러운 배경 그라데이션 */
+        }
+        .chat-box {
+            width: 500px;
+            height: 700px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding: 20px;
+            background: linear-gradient(135deg, #a4d66d, #6fbb5d);
+            border-radius: 20px;
+            border: 5px solid #3b7c27;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+        }
+        .message {
+            padding: 10px 15px;
+            border-radius: 15px;
+            max-width: 75%;
+            word-wrap: break-word;
+            font-size: 16px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .buyer-message {
+            background-color: #4CAF50;
+            color: white;
+            align-self: flex-end;
+        }
+        .seller-message {
+            background-color: #2196F3;
+            color: white;
+            align-self: flex-start;
+        }
+        .button-container {
+            width: 500px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        .button-container button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background-color 0.3s, transform 0.2s;
+        }
+        .button-container button:hover {
+            transform: scale(1.1);
+        }
+        .yes-button {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .no-button {
+            background-color: #f44336;
+            color: white;
+        }
+        .nego-button {
+            background-color: #ffa500;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-box" id="chat-box"></div>
+    <div class="button-container" id="button-container"></div>
+
+    <script>
+        let isBuyerTurn = true; // 구매자 차례인지 판매자 차례인지 확인
+        let isChatClosed = false; // 채팅이 종료된 상태를 추적
+        const ws = new WebSocket('ws://localhost:8888'); // WebSocket 서버 주소
+
+        ws.onopen = () => {
+            console.log("WebSocket 연결 성공!");
+
+            // 페이지가 로드되었을 때, 구매자 역할을 자동으로 설정 (상품 페이지에서 '구매하기'를 누르면 자동으로 구매자 역할 설정)
+            const role = new URLSearchParams(window.location.search).get("role");
+            if (role && role === "buyer") {
+                ws.send('buyer'); // 구매자 역할로 설정
+                console.log("구매자 역할로 설정됨");
+            } else {
+                ws.send('seller'); // 판매자 역할로 설정 (기본값)
+                console.log("판매자 역할로 설정됨");
+            }
+        };
+
+        ws.onmessage = (event) => {
+            if (isChatClosed) return; // 채팅 종료 후 메시지 받지 않도록 처리
+
+            const chatBox = document.getElementById('chat-box');
+            const responseMessage = document.createElement('div');
+            responseMessage.textContent = event.data;
+            responseMessage.classList.add('message');
+            chatBox.appendChild(responseMessage);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        };
+
+        let negoPrice = null; // 네고 가격 저장 변수
+        function getBuyerResponse(response) {
+            if (response === 'Yes') {
+                return "구매 가능할까요?";
+            } else if (response === 'No') {
+                return "구매를 포기하겠습니다.";
+            } else if (response === '네고') {
+                // 네고 선택 시 가격 입력창 표시
+                const price = prompt("네고하고 싶은 가격을 입력하세요:");
+                if (price && !isNaN(price)) {
+                    negoPrice = price; // 입력된 가격 저장
+                    return `${price}원으로 네고 가능할까요?`;
+                } else {
+                    return "유효한 금액을 입력해주세요.";
+                }
+            }
+            return ""; // 기본값
+        }
+
+        function getSellerResponse(response) {
+            if (response === 'Yes') {
+                // 판매자가 Yes를 선택했을 때 네고 가격에 따른 메시지 표시
+                if (negoPrice !== null) {
+                    return `${negoPrice}원에 판매하겠습니다!`;
+                } else {
+                    return "판매 가능합니다!";
+                }
+            } else if (response === 'No') {
+                return "판매 불가능합니다.";
+            } else if (response === '네고') {
+                // 네고 관련 응답
+                return `${negoPrice || "<가격>"}원에 판매하겠습니다!`;
+            }
+            return ""; // 기본값
+        }
+
+        // 버튼 클릭 시 메시지 전송
+        function sendResponse(response) {
+            if (isChatClosed) return; // 채팅 종료된 상태에서는 응답을 보내지 않음
+        
+            const chatBox = document.getElementById('chat-box');
+            const responseMessage = document.createElement('div');
+        
+            // 구매자와 판매자의 메시지를 번갈아가며 표시
+            if (isBuyerTurn) {
+                if (response === 'No') {
+                    // 구매자가 No를 누르면 메시지 출력 없이 바로 종료
+                    isChatClosed = true; // 채팅 종료 상태 설정
+                    location.href = "store.html"; // 즉시 종료
+                    return; // 이후 로직 실행하지 않음
+                }
+        
+                const message = getBuyerResponse(response);
+                responseMessage.textContent = message ? `구매자: ${message}` : "구매자: 메시지가 없습니다.";
+                responseMessage.classList.add('buyer-message', 'message');
+            } else {
+                const message = getSellerResponse(response);
+                responseMessage.textContent = message ? `판매자: ${message}` : "판매자: 메시지가 없습니다.";
+                responseMessage.classList.add('seller-message', 'message');
+            }
+        
+            chatBox.appendChild(responseMessage);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        
+            // 메시지 출력 후에 채팅 종료 처리 (Yes나 No 선택 시)
+            if (!isBuyerTurn && (response === 'Yes' || response === 'No')) {
+                setTimeout(() => {
+                    alert("채팅을 종료합니다.");
+                    location.href = "store.html"; // 2초 후 채팅 종료
+                }, 1000); // 1초 후에 알림 및 종료
+            }
+        
+            isBuyerTurn = !isBuyerTurn; // 차례 변경
+            updateButtons(); // 버튼 업데이트
+        
+            ws.send(response); // WebSocket을 통해 메시지 전송
+        }
+
+        // 버튼 초기화 및 표시
+        function updateButtons() {
+            const buttonContainer = document.getElementById('button-container');
+            buttonContainer.innerHTML = ''; // 기존 버튼 초기화
+
+            if (isBuyerTurn) {
+                // 구매자 차례일 때 Yes, No, 네고 버튼 모두 표시
+                const yesButton = document.createElement('button');
+                yesButton.textContent = 'Yes';
+                yesButton.classList.add('yes-button');
+                yesButton.onclick = () => sendResponse('Yes');
+
+                const noButton = document.createElement('button');
+                noButton.textContent = 'No';
+                noButton.classList.add('no-button');
+                noButton.onclick = () => sendResponse('No');
+
+                const negoButton = document.createElement('button');
+                negoButton.textContent = '네고';
+                negoButton.classList.add('nego-button');
+                negoButton.onclick = () => sendResponse('네고');
+
+                buttonContainer.appendChild(yesButton);
+                buttonContainer.appendChild(noButton);
+                buttonContainer.appendChild(negoButton);
+            } else {
+                // 판매자 차례일 때 Yes와 No 버튼만 표시
+                const yesButton = document.createElement('button');
+                yesButton.textContent = 'Yes';
+                yesButton.classList.add('yes-button');
+                yesButton.onclick = () => sendResponse('Yes');
+
+                const noButton = document.createElement('button');
+                noButton.textContent = 'No';
+                noButton.classList.add('no-button');
+                noButton.onclick = () => sendResponse('No');
+
+                buttonContainer.appendChild(yesButton);
+                buttonContainer.appendChild(noButton);
+            }
+        }
+        
+        updateButtons();
+    </script>
+</body>
+</html>
